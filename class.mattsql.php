@@ -1,27 +1,22 @@
 <?php
 /**
+ * @package mframe
+ */
+/**
  * Matt SQL
  * 
- * This is a simple means of connecting to a mysql database and fetching data
- * while taking advantage of PHP5 features like method chaining.  If you have a
- * simple script, and all you need is some quick access to a mysql database,
- * then this is the class for you.   If you have a large, professional
- * project, there are far better means of connecting to a mysql database.
- * 
- * What this class does not do:
- * - Abstract database calls - This class only connects to a mysql database
- * - Track relations - This is not like ORM which tracks relations for you.
- * 
- * What this class does do:
- * - Provides you with a quick and simple way to connect to a mysql database.
- * - Allows you to chain several methods for DRY code.
- * - Throws Exceptions that you can catch when things go bad.
- * - Optionally caches SELECT, SHOW, DESCRIBE, EXPLAIN queries.
- * - Cleans up all its connections upon destruction.
+ * I created this PHP5 class because I was dissapointed in a lot of the other 
+ * mysql classes out there. Often times, on small projects, I just need a simple
+ * class to connect to a mysql database and go.  Abstraction and fancy features
+ * are overkill sometimes.  This class was meant to be small, fast and easy to
+ * use for MySQL only.
+ *
+ * Obviously, if you have a large project, you should use one of the
+ * dozens of robust database connection libraries like ORM or Active Record.
  * 
  * Example of usage:
  * <code>
- * 	$o_db = mattsql::init();
+ * 	$o_db = MattSQL::init();
  *	$a_chapter_names = $o_db
  *		->newConnection('localhost', 'login', 'password', 'database')
  *		->q("SELECT `title` FROM `database`.`chapter_names` WHERE `date_folder` = '2011-04' ORDER BY `chapter` ASC")
@@ -35,7 +30,7 @@
  *		o Now uses the singleton pattern.
  *		o Switched documentation to JavaDoc stype PhpDoc documentation.
  *		o Several class methods are now chainable.
- *		o Now can optionally cache SELECT-type query results.
+ *		o Now can optinally cache SELECT-type query results.
  * - Version 0.0.2 by Matthew Toledo on 2009-10-01
  *		o added documentation to class
  * - Version 0.0.1 by Matthew Toledo on 2009-07-06
@@ -44,14 +39,15 @@
  * - Version 0.0.0 by Matthew Toledo on 2009-03-11
  *		o Script created
  * 
+ * @subpackage classes
  * @author Matthew Toledo
- * @link http://www.matthewtoledo.net/projects/mattsql
+ * @link http://www.matthewtoledo.net/projects/MattSQL
  */
-class mattsql {
+class MattSQL {
 
 	/**
 	 * Holds an instance of this class
-	 * @var mattsql
+	 * @var MattSQL
 	 */
 	private static $o_instance;
 	
@@ -104,14 +100,14 @@ class mattsql {
 	 * Determines the format of the mysql query results.  Must be either 
 	 * OBJECT, HASH, or ARRAY.
 	 * 
-	 * @see mattsql::setMode()
+	 * @see MattSQL::setMode()
 	 * @var string 
 	 */
 	protected $sMode;
 
 	/**
 	 * String holding the current query.
-	 * @see mattsql::q()
+	 * @see MattSQL::q()
 	 * @var string
 	 */
 	protected $sQuery;
@@ -147,7 +143,7 @@ class mattsql {
 	/**
 	 * Used to create a new singleton connection to the database.
 	 * 
-	 * @return mattsql
+	 * @return MattSQL
 	 */
 	public static function init()
 	{
@@ -161,6 +157,21 @@ class mattsql {
 		return self::$o_instance;
 		
 	}
+	
+	/**
+	 * Gets singleton instance of MattSQL
+	 *
+	 * @param boolean $b_auto_create optional When TRUE, it will spawn a new instance if one does not exist.
+	 * @return FirePHP
+	 */
+	public static function getInstance($b_auto_create = false) 
+	{
+		if($b_auto_create === true && !isset(self::$o_instance)) 
+		{
+			self::init();
+		}
+		return self::$o_instance;
+	}
 
 	/**
 	 * Make a connection to the database and add it to the list of connections
@@ -172,10 +183,13 @@ class mattsql {
 	 * @param string $sPass
 	 * @param string $sDatabase
 	 * @param integer $iPort 
-	 * @return mattsql
+	 * @return MattSQL
 	 */	
 	public function newConnection($sHost, $sLogin, $sPass, $sDatabase, $iPort=NULL) 
 	{
+		
+		FB::group(__METHOD__);
+		FB::log(func_get_args(),'args');
 		
 		// Sanity check the constructor arguments
 		if (!is_string($sHost) || !strlen($sHost))			throw new Exception ('The first argument, host, must be a non-empty string.');
@@ -190,20 +204,25 @@ class mattsql {
 		} 
 		// make connection without port number (this is more common)
 		else {
-			$m = mysql_connect($sHost, $sUser, $sPass);
+			$m = mysql_connect($sHost, $sLogin, $sPass);
 		}
 		
 		// see if link was successful
 		if (FALSE === $m) throw new Exception ('Failed connecting to server : '.mysql_error());		
 		
-		$this->$aLinks[] = $m;
+		$this->aLinks[] = $m;
 		$this->iCurrentLink = count($this->aLinks) - 1;
+		
+		FB::log($this->aLinks,'$this->aLinks');
+		FB::log($this->iCurrentLink,'$this->iCurrentLink');
 		
 		// connect to a database
 		$this->selectDB($sDatabase);
 		
 		// set the default mode
-		$this->setMode('ASSOC');
+		$this->setMode('HASH');
+		
+		FB::groupEnd();
 		
 		return $this;
 
@@ -220,15 +239,7 @@ class mattsql {
         {  
             mysql_close($iConnection);
         }  
-    } 
-	
-	/**
-	 * Prevent cloning
-	 */
-	public function __clone()
-	{
-		throw new Exception("You can not clone this object");
-	}
+    }  	
 	
 	/**
 	 * Returns the current mysql connection resource.
@@ -237,11 +248,25 @@ class mattsql {
 	 */
 	public function getActiveLink()
 	{
+		FB::log(__METHOD__."()");
+		FB::log($this->aLinks,'$this->aLinks');
 		if (!(isset($this->aLinks[$this->iCurrentLink]))) {
 			throw new Exception("There is no current connection");
 		}
 		return $this->aLinks[$this->iCurrentLink];
 	}
+        
+        /**
+         * Gets the ID number of the current mysql connection as it would appear
+         * in the aLinks array.
+         * 
+         * @return integer
+         * @see MattSQL::aLinks
+         */
+        public function getActiveLinkId()
+        {
+			return $this->iCurrentLink;
+        }
 	
 	/**
 	 * Set the ID of the database connection that we wish to use.
@@ -250,12 +275,13 @@ class mattsql {
 	 * connection to use. This method is chainable.
 	 * 
 	 * @param integer $i A link id.
-	 * @return mattsql 
+	 * @return MattSQL 
 	 */
 	public function setActiveLink($i)
 	{
+		FB::log(__METHOD__."('$i')");
 		if (!(isset($this->aLinks[$i]))) {
-			throw new Exception("There is no current connection");
+			throw new Exception("Could not set the active link to link '$i'");
 		}
 		$this->iCurrentLink = $i;
 		return $this;
@@ -267,7 +293,7 @@ class mattsql {
 	 * This method can be chained.
 	 * 
 	 * @param string $sDb The name of the database.
-	 * @return mattsql 
+	 * @return MattSQL 
 	 * @throws Exception
 	 */
 	public function selectDB($sDb) 
@@ -290,17 +316,19 @@ class mattsql {
 	/**
 	 * Execute a query.
 	 * 
-	 * The main workhorse of the mattsql class. Does the query. This method
+	 * The main workhorse of the MattSQL class. Does the query. This method
 	 * can be chained.
 	 * 
 	 * @param string $sQuery A MySQL query.
 	 * @param boolean $bCache If true, cache the query results for use again.
-	 * @return mattsql 
+	 * @return MattSQL 
 	 * @throws Exception
 	 */
 	public function q($sQuery, $bCache = FALSE) 
 	{
-	
+		
+		FB::group(__METHOD__);
+		
 		// clean all the variables
 		$this->bSuccess = FALSE;
 		$this->iAffectedRows = 0;
@@ -320,6 +348,8 @@ class mattsql {
 		
 		// copy to class variable
 		$this->sQuery = $sQuery;
+		
+		FB::log($this->sQuery);
 		
 		// run the query
 		$this->iResult = mysql_query($this->sQuery,$this->getActiveLink());
@@ -358,6 +388,8 @@ class mattsql {
 			throw new Exception('Fatal Error :  Unable to determine query type.  Value for iResult is not an integer or boolean. Query was : '.$this->sQuery);
 		}
 		
+		FB::groupEnd();
+		
 		return $this;
 		
 	}
@@ -377,7 +409,7 @@ class mattsql {
 	 * This method is chainable
 	 * 
 	 * @param integer $iCacheId A query cache ID
-	 * @return mattsql
+	 * @return MattSQL
 	 * @throws Exception 
 	 */
 	public function useCachedQuery($iCacheId)
@@ -398,7 +430,7 @@ class mattsql {
 	 * This method can be chained.
 	 * 
 	 * @param type $sMode Valid modes are "OBJECT", "HASH" and "ARRAY"
-	 * @return mattsql
+	 * @return MattSQL
 	 * @throws Exception
 	 */
 	public function setMode($sMode) 
@@ -408,7 +440,7 @@ class mattsql {
 				!is_string($sMode) || 
 				!strlen($sMode) ||	
 				!in_array($sMode,array('OBJECT','HASH','ARRAY'))
-		) throw new Exception ('$sMode must OBJECT, HASH, or ARRAY.');
+		) throw new Exception ('$sMode must OBJECT, HASH, or ARRAY. Instead it was '.$sMode);
 
 		$this->sMode = $sMode;
 		
@@ -591,13 +623,15 @@ class mattsql {
 	{
 		
 		$aReturn = array();
-
+		
+		$sOriginalMode = $this->getMode();
+		$this->setMode('HASH');
 		while ($a = $this->fetchRow()) 
 		{
 			$aReturn[$a[$sKeyColName]]=$a[$sValueColName];
 		}
+		$this->setMode($sOriginalMode);
 		return $aReturn;
-		
 		
 	}
 }
