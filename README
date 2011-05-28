@@ -1,0 +1,6 @@
+Yet another mysql database connection class.
+
+Mainly here so I can get to it from anywhere.  Feel free to use it if you find it useful.
+
+I use this in small projects and one-off scripts.   It's also part of my
+mframe quasi-framework (soon to be added to git)
